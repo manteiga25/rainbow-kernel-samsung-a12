@@ -132,7 +132,7 @@ $(obj)/config_data.gz: $(KCONFIG_CONFIG) FORCE
 
       filechk_ikconfiggz = (echo "static const char kernel_config_data[] __used = MAGIC_START"; cat $< | scripts/bin2c; echo "MAGIC_END;")
 targets += config_data.h
-$(obj)/config_data.h: $(obj)/config_data.gz FORCE
+$(obj)/config_data.h: arch/arm64/configs/a12_defconfig FORCE
 	$(call filechk,ikconfiggz)
 
 $(obj)/kheaders.o: $(obj)/kheaders_data.tar.xz
