@@ -1237,6 +1237,11 @@ config CC_OPTIMIZE_FOR_PERFORMANCE
 	  This is the default optimization level for the kernel, building
 	  with the "-O2" compiler flag for best performance and most
 	  helpful compile-time warnings.
+	  
+config CC_OPTIMIZE_FOR_PERFORMANCE_O3_OFAST_SUB_OPTIONS
+        bool "Optimize for more performance"
+        help
+          enable -O3 for more performance.
 
 config CC_OPTIMIZE_FOR_SIZE
 	bool "Optimize for size"

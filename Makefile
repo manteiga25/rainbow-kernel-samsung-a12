@@ -320,7 +320,7 @@ include scripts/subarch.include
 # Default value for CROSS_COMPILE is not to prefix executables
 # Note: Some architectures assign CROSS_COMPILE in their arch/*/Makefile
 ARCH            ?= arm64
-CROSS_COMPILE   ?= $(srctree)/toolchain/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/bin/aarch64-linux-androidkernel-
+CROSS_COMPILE   ?= $(CONFIG_CROSS_COMPILE:"%"=%)
 
 # Architecture as present in compile.h
 UTS_MACHINE 	:= $(ARCH)
@@ -359,26 +359,52 @@ HOST_LFS_CFLAGS := $(shell getconf LFS_CFLAGS 2>/dev/null)
 HOST_LFS_LDFLAGS := $(shell getconf LFS_LDFLAGS 2>/dev/null)
 HOST_LFS_LIBS := $(shell getconf LFS_LIBS 2>/dev/null)
 
+ifneq ($(LLVM),)
+HOSTCC	= clang
+HOSTCXX	= clang++
+else
 HOSTCC       = gcc
 HOSTCXX      = g++
-KBUILD_HOSTCFLAGS   := -Wall -Wmissing-prototypes -Wstrict-prototypes -O2 \
+endif
+KBUILD_HOSTCFLAGS   := -Wall -Wmissing-prototypes -Wstrict-prototypes -O3 \
 		-fomit-frame-pointer -std=gnu89 $(HOST_LFS_CFLAGS) \
 		$(HOSTCFLAGS)
-KBUILD_HOSTCXXFLAGS := -O2 $(HOST_LFS_CFLAGS) $(HOSTCXXFLAGS)
+KBUILD_HOSTCXXFLAGS := -O3 $(HOST_LFS_CFLAGS) $(HOSTCXXFLAGS)
 KBUILD_HOSTLDFLAGS  := $(HOST_LFS_LDFLAGS) $(HOSTLDFLAGS)
 KBUILD_HOSTLDLIBS   := $(HOST_LFS_LIBS) $(HOSTLDLIBS)
 
+ifeq ($(shell $(HOSTCC) -v 2>&1 | grep -c "clang version"), 1)
+HOSTCFLAGS  += -Wno-unused-value -Wno-unused-parameter \
+		-Wno-missing-field-initializers
+endif
+
 # Make variables (CC, etc...)
+CPP		= $(CC) -E
+ifneq ($(LLVM),)
+CC		= clang
+CXX             = clang++
+LD		= ld.lld
+LLD             = lld
+AR		= llvm-ar
+NM		= llvm-nm
+OBJCOPY		= llvm-objcopy
+OBJDUMP		= llvm-objdump
+READELF		= llvm-readelf
+STRIP		= llvm-strip
+AS              = llvm-as
+OBJSIZE         = llvm-size
+else
 AS		= $(CROSS_COMPILE)as
 LD		= $(CROSS_COMPILE)ld
 CC		= $(CROSS_COMPILE)gcc
-CC		= $(srctree)/toolchain/clang/host/linux-x86/clang-r383902/bin/clang
+#CC		= $(srctree)/toolchain/clang/host/linux-x86/clang-r383902/bin/clang
 CPP		= $(CC) -E
 AR		= $(CROSS_COMPILE)ar
 NM		= $(CROSS_COMPILE)nm
 STRIP		= $(CROSS_COMPILE)strip
 OBJCOPY		= $(CROSS_COMPILE)objcopy
 OBJDUMP		= $(CROSS_COMPILE)objdump
+endif
 LEX		= flex
 YACC		= bison
 AWK		= awk
@@ -486,22 +512,21 @@ endif
 
 ifeq ($(cc-name),clang)
 ifneq ($(CROSS_COMPILE),)
-CLANG_TRIPLE	?= $(srctree)/toolchain/clang/host/linux-x86/clang-r383902/bin/aarch64-linux-gnu-
+CLANG_TRIPLE	?= $(CROSS_COMPILE)
 CLANG_FLAGS	+= --target=$(notdir $(CLANG_TRIPLE:%-=%))
 ifeq ($(shell $(srctree)/scripts/clang-android.sh $(CC) $(CLANG_FLAGS)), y)
 $(error "Clang with Android --target detected. Did you specify CLANG_TRIPLE?")
 endif
 GCC_TOOLCHAIN_DIR := $(dir $(shell which $(CROSS_COMPILE)elfedit))
-CLANG_FLAGS	+= --prefix=$(GCC_TOOLCHAIN_DIR)
+CLANG_FLAGS	+= --prefix=$(GCC_TOOLCHAIN_DIR)$(notdir $(CROSS_COMPILE))
 GCC_TOOLCHAIN	:= $(realpath $(GCC_TOOLCHAIN_DIR)/..)
 endif
 ifneq ($(GCC_TOOLCHAIN),)
 CLANG_FLAGS	+= --gcc-toolchain=$(GCC_TOOLCHAIN)
 endif
-CLANG_FLAGS	+= -no-integrated-as
 CLANG_FLAGS	+= -Werror=unknown-warning-option
-KBUILD_CFLAGS	+= $(CLANG_FLAGS)
-KBUILD_AFLAGS	+= $(CLANG_FLAGS)
+KBUILD_CFLAGS	+= $(CLANG_FLAGS) $(CLANG_GCC_TC) $(CLANG_PREFIX)
+KBUILD_AFLAGS	+= $(CLANG_FLAGS) $(CLANG_GCC_TC) $(CLANG_PREFIX) -no-integrated-as
 export CLANG_FLAGS
 endif
 
@@ -618,8 +643,8 @@ endif
 ifdef CONFIG_LTO_CLANG
 # use llvm-ar for building symbol tables from IR files, and llvm-nm instead
 # of objdump for processing symbol versions and exports
-LLVM_AR		:= llvm-ar
-LLVM_NM		:= llvm-nm
+LLVM_AR		:= /home/alexandre/proton-clang/bin/llvm-ar
+LLVM_NM		:= /home/alexandre/proton-clang/bin/llvm-nm
 export LLVM_AR LLVM_NM
 endif
 
@@ -676,8 +701,74 @@ KBUILD_CFLAGS	+= $(call cc-disable-warning, misleading-indentation)
 
 ifdef CONFIG_CC_OPTIMIZE_FOR_SIZE
 KBUILD_CFLAGS   += -Os
+else ifdef CONFIG_CC_OPTIMIZE_FOR_PERFORMANCE_O3_OFAST_SUB_OPTIONS
+KBUILD_CFLAGS   += -O3 -fno-signed-zeros -fassociative-math -fno-trapping-math -freciprocal-math -fno-math-errno $(call cc-disable-warning,maybe-uninitialized,)
+KBUILD_CPPFLAGS += -O3
+KBUILD_AFLAGS   += -O3 -mcpu=cortex-a53
 else
 KBUILD_CFLAGS   += -O2
+endif
+
+ifeq ($(cc-name),clang)
+# Add Some optimization flags for clang
+KBUILD_CFLAGS	+= -mcpu=cortex-a53 \
+-pipe \
+-ffunction-sections \
+-ffp-model=fast
+
+# Enable Clang Polly optimizations
+KBUILD_CFLAGS	+= -mllvm -polly \
+                   -mllvm -polly-use-runtime-alias-checks \
+                   -mllvm -polly-detect-track-failures \
+                   -mllvm -polly-optimized-scops \
+                   -mllvm -polly-import-jscop-dir \
+                   -mllvm -polly-run-export-jscop \
+                   -mllvm -polly-use-llvm-names \
+                   -mllvm -polly-omp-backend=LLVM \
+                   -mllvm -polly-delicm-max-ops=0 \
+                   -mllvm -polly-2nd-level-tiling \
+                   -mllvm -polly-position=early \
+                   -mllvm -polly-position=before-vectorizer \
+                   -mllvm -polly-num-threads=8 \
+                   -mllvm -polly-scheduling=dynamic \
+                   -mllvm -polly-scheduling-chunksize=1 \
+                   -mllvm -polly-vectorizer=polly \
+                   -mllvm -polly-opt-maximize-bands=yes \
+                   -mllvm -polly-ast-use-context \
+                   -mllvm -polly-detect-keep-going \
+		   -mllvm -polly-invariant-load-hoisting \
+		   -mllvm -polly-run-dce \
+		   -mllvm -polly-run-inliner \
+		   -mllvm -polly-vectorizer=stripmine \
+		   -mllvm -polly-opt-simplify-deps=no \
+		   -mllvm -polly-rtc-max-arrays-per-group=40 \
+		   -mllvm -polly-parallel \
+			 -mllvm -polly-ast-detect-parallel
+                          #-mllvm -polly-no-early-exit
+endif                          
+
+# Add EXP New Pass Manager for clang
+KBUILD_CFLAGS	+= -fexperimental-new-pass-manager
+#endif
+
+#### too lazy to remove doubles...
+KBUILD_CFLAGS	+= -fasynchronous-unwind-tables -fexceptions -fno-semantic-interposition -D_FORTIFY_SOURCE=2 \
+-fno-strict-aliasing \
+-pthread -Wall -Wformat-security -fwrapv --param=ssp-buffer-size=32 \
+-D_REENTRANT
+
+#-g
+
+#
+
+#####KBUILD_CFLAGS += $(call cc-ifversion, -lt, 0409, \
+			$(call cc-disable-warning,maybe-uninitialized,))
+
+# Add EXP New Pass Manager for clang
+KBUILD_CFLAGS	+= $(call cc-option,-fexperimental-new-pass-manager)
+
+ifdef CONFIG_CC_WERROR
+KBUILD_CFLAGS	+= -Werror
 endif
 
 # Tell gcc to never replace conditional load with a non-conditional one
