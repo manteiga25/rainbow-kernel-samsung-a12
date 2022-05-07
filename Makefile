@@ -643,9 +643,15 @@ endif
 ifdef CONFIG_LTO_CLANG
 # use llvm-ar for building symbol tables from IR files, and llvm-nm instead
 # of objdump for processing symbol versions and exports
-LLVM_AR		:= /home/alexandre/proton-clang/bin/llvm-ar
-LLVM_NM		:= /home/alexandre/proton-clang/bin/llvm-nm
+ifdef CONFIG_RAINBOW_DEV
+LLVM_AR         := /home/alexandre/proton-clang/bin/llvm-ar
+LLVM_NM         := /home/alexandre/proton-clang/bin/llvm-nm
 export LLVM_AR LLVM_NM
+else
+LLVM_AR		:= llvm-ar
+LLVM_NM		:= llvm-nm
+export LLVM_AR LLVM_NM
+endif
 endif
 
 # The arch Makefile can set ARCH_{CPP,A,C}FLAGS to override the default

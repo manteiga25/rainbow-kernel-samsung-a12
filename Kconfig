@@ -11,6 +11,12 @@ source "scripts/Kconfig.include"
 
 source "init/Kconfig"
 
+config RAINBOW_DEV
+       bool "my toolchain directory"
+       default n
+       help
+          this options enable llvm-ar and llvm-nm localizations.
+
 source "kernel/Kconfig.freezer"
 
 source "fs/Kconfig.binfmt"
