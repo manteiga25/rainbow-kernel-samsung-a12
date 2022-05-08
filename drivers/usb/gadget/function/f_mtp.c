@@ -23,7 +23,7 @@
 #include <linux/usb.h>
 #include <linux/usb_usual.h>
 #include <linux/usb/ch9.h>
-#include "f_mtp.h"
+#include <linux/usb/f_mtp.h>
 #include <linux/configfs.h>
 #include <linux/usb/composite.h>
 
