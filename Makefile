@@ -720,7 +720,7 @@ ifeq ($(cc-name),clang)
 KBUILD_CFLAGS	+= -mcpu=cortex-a53 \
 -pipe \
 -ffunction-sections \
--ffp-model=fast
+-ffp-model=fast -fomit-frame-pointer -foptimize-sibling-calls
 
 # Enable Clang Polly optimizations
 KBUILD_CFLAGS	+= -mllvm -polly \
