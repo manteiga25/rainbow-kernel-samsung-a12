@@ -1152,12 +1152,6 @@ static void prox_lp_scan_mode(void *device_data)
 	mutex_lock(&ilits->touch_mutex);
 	input_info(true, ilits->dev, "%s: %d\n", __func__, sec->cmd_param[0]);
 
-	if (!ilits->prox_lp_scan_enabled) {
-		input_err(true, ilits->dev, "%s: Not support LPSCAN!\n", __func__);
-		ret = -1;
-		goto out;
-	}
-
 	if (ilits->power_status == POWER_ON_STATUS) {
 		input_info(true, ilits->dev, "%s  now screen on stae, it'll setting after screen off\n", __func__);
 		if (sec->cmd_param[0] == PORX_LP_SCAN_ON)
@@ -1400,17 +1394,9 @@ static ssize_t read_support_feature(struct device *dev,
 	if (ilits->enable_settings_aot)
 		feature |= INPUT_FEATURE_ENABLE_SETTINGS_AOT;
 
-	if (ilits->enable_sysinput_enabled)
-		feature |= INPUT_FEATURE_ENABLE_SYSINPUT_ENABLED;
-
-	if (ilits->prox_lp_scan_enabled)
-		feature |= INPUT_FEATURE_ENABLE_PROX_LP_SCAN_ENABLED;
-
-	input_info(true, ilits->dev, "%s: %d%s%s%s\n",
+	input_info(true, ilits->dev, "%s: %d%s\n",
 				__func__, feature,
-				feature & INPUT_FEATURE_ENABLE_SETTINGS_AOT ? " aot" : "",
-				feature & INPUT_FEATURE_ENABLE_SYSINPUT_ENABLED ? " SE" : "",
-				feature & INPUT_FEATURE_ENABLE_PROX_LP_SCAN_ENABLED ? " LPSCAN" : "");
+				feature & INPUT_FEATURE_ENABLE_SETTINGS_AOT ? " aot" : "");
 
 	return snprintf(buf, SEC_CMD_BUF_SIZE, "%d", feature);
 }
@@ -1487,62 +1473,10 @@ static ssize_t protos_event_store(struct device *dev,
 	return count;
 }
 
-static ssize_t enabled_show(struct device *dev,
-		struct device_attribute *attr, char *buf)
-{
-	input_info(true, ilits->dev, "%s: %d\n", __func__, ilits->screen_off_sate);
-
-	return snprintf(buf, SEC_CMD_BUF_SIZE, "%d", ilits->screen_off_sate);
-}
-
-static ssize_t enabled_store(struct device *dev,
-		struct device_attribute *attr,
-		const char *buf, size_t count)
-{
-	int buff[2];
-	int ret;
-
-	ret = sscanf(buf, "%d,%d", &buff[0], &buff[1]);
-	if (ret != 2) {
-		input_err(true, ilits->dev,
-				"%s: failed read params [%d]\n", __func__, ret);
-		return -EINVAL;
-	}
-
-	input_info(true, ilits->dev, "%s: %d %d\n", __func__, buff[0], buff[1]);
-
-	/* handle same sequence : buff[0] = LCD_ON, LCD_DOZE1, LCD_DOZE2*/
-	if (buff[0] == LCD_DOZE1 || buff[0] == LCD_DOZE2)
-		buff[0] = LCD_ON;
-
-	switch (buff[0]) {
-	case LCD_OFF:
-		if (buff[1] == LCD_EARLY_EVENT) {
-			if (ili_sleep_handler(TP_EARLY_SUSPEND) < 0)
-				input_err(true, ilits->dev, "%s TP suspend failed\n", __func__);
-		}
-		break;
-	case LCD_ON:
-		if (buff[1] == LCD_EARLY_EVENT) {
-			if ((ilits->screen_off_sate != TP_EARLY_RESUME) && (ilits->screen_off_sate != TP_RESUME))
-				ili_sleep_handler(TP_EARLY_RESUME);
-		} else if (buff[1] == LCD_LATE_EVENT) {
-			if (ili_sleep_handler(TP_RESUME) < 0)
-				input_err(true, ilits->dev, "%s TP resume failed\n", __func__);
-		}
-		break;
-	default:
-		ILI_DBG("%s Unknown event\n", __func__);
-		break;
-	}
-
-	return count;
-}
 static DEVICE_ATTR(sensitivity_mode, S_IRUGO | S_IWUSR | S_IWGRP, sensitivity_mode_show, sensitivity_mode_store);
 static DEVICE_ATTR(support_feature,  S_IRUGO, read_support_feature, NULL);
 static DEVICE_ATTR(prox_power_off, S_IRUGO | S_IWUSR | S_IWGRP, prox_power_off_show, prox_power_off_store);
 static DEVICE_ATTR(virtual_prox, S_IRUGO | S_IWUSR | S_IWGRP, protos_event_show, protos_event_store);
-static DEVICE_ATTR(enabled, S_IRUGO | S_IWUSR | S_IWGRP, enabled_show, enabled_store);
 
 
 static struct attribute *cmd_attributes[] = {
@@ -1550,7 +1484,6 @@ static struct attribute *cmd_attributes[] = {
 	&dev_attr_support_feature.attr,
 	&dev_attr_prox_power_off.attr,
 	&dev_attr_virtual_prox.attr,
-	&dev_attr_enabled.attr,
 	NULL,
 };
 
@@ -1584,11 +1517,13 @@ int ili_sec_fn_init(void)
 		input_err(true, ilits->dev,
 				"%s: Failed to alloc memory pFrame\n", __func__);
 		retval = -EINVAL;
-		goto exit;
+		goto error_alloc_pFram;
 	}
 
 	return 0;
 
+error_alloc_pFram:
+	kfree(ilits->print_buf);
 exit:
 	return retval;
 }

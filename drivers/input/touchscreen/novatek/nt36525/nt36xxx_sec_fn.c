@@ -1562,12 +1562,12 @@ u16 nvt_ts_mode_read(struct nvt_ts_data *ts)
 	return mode_masked;
 }
 
-static int nvt_ts_mode_switch(struct nvt_ts_data *ts, u8 cmd, bool print_log)
+static int nvt_ts_mode_switch(struct nvt_ts_data *ts, u8 cmd, bool stored)
 {
 	int i, retry = 5;
 	u8 buf[3] = { 0 };
 
-	input_info(true, &ts->client->dev, "%s : cmd(0x%X)\n", __func__, cmd);
+	input_info(true, &ts->client->dev, "%s : cmd(0x%X) stored(%d)\n", __func__, cmd, stored);
 
 	//---set xdata index to EVENT BUF ADDR---
 	nvt_set_page(ts->mmap->EVENT_BUF_ADDR | EVENT_MAP_HOST_CMD);
@@ -1593,23 +1593,25 @@ static int nvt_ts_mode_switch(struct nvt_ts_data *ts, u8 cmd, bool print_log)
 		return -EIO;
 	}
 
-	if (print_log) {
-		u16 read_ic_mode;
-		msleep(20);
-		read_ic_mode = nvt_ts_mode_read(ts);
-		input_info(true, &ts->client->dev,"%s : cmd(0x%X) sec_function : 0x%02X & nvt_ts_mode_read : 0x%02X\n",
-					__func__, cmd, ts->sec_function, read_ic_mode);
-	}
+	if (stored) {
+		msleep(10);
+
+		input_info(true, &ts->client->dev,"%s : before stored sec_function : 0x%02X\n", __func__, ts->sec_function);
+		ts->sec_function = nvt_ts_mode_read(ts);
+		input_info(true, &ts->client->dev,"%s : after  stored sec_function : 0x%02X\n", __func__, ts->sec_function);
+	} else
+		input_info(true, &ts->client->dev,"%s : mode from fw 0x%02X\n", __func__, nvt_ts_mode_read(ts));
+
 	return 0;
 }
 #if PROXIMITY_FUNCTION
-int nvt_ts_mode_switch_extened(struct nvt_ts_data *ts, u8 *cmd, u8 len, bool print_log)
+int nvt_ts_mode_switch_extened(struct nvt_ts_data *ts, u8 *cmd, u8 len, bool stored)
 {
 	int i, retry = 5;
 	u8 buf[4] = { 0 };
 
-	input_info(true, &ts->client->dev, "%s : cmd(0x%X/0x%X/0x%X)\n",
-				__func__, cmd[0], cmd[1], cmd[2]);
+	input_info(true, &ts->client->dev, "%s : cmd(0x%X/0x%X/0x%X) stored(%d)\n",
+				__func__, cmd[0], cmd[1], cmd[2], stored);
 
 	//---set xdata index to EVENT BUF ADDR---
 	buf[0] = cmd[0];
@@ -1627,18 +1629,18 @@ int nvt_ts_mode_switch_extened(struct nvt_ts_data *ts, u8 *cmd, u8 len, bool pri
 	}
 
 	if (unlikely(i == retry)) {
-		input_err(true, &ts->client->dev, "failed to switch mode - buf:0x%02X 0x%02X, cmd:0x%02X 0x%02X\n",
-				buf[0], buf[1], cmd[0], cmd[1]);
+		input_err(true, &ts->client->dev, "failed to switch mode - 0x%02X 0x%02X\n", buf[0], buf[1]);
 		return -EIO;
 	}
 
-	if (print_log) {
-		u16 read_ic_mode;
-		msleep(20);
-		read_ic_mode = nvt_ts_mode_read(ts);
-		input_info(true, &ts->client->dev,"%s : sec_function : 0x%02X & nvt_ts_mode_read : 0x%02X\n",
-				__func__, ts->sec_function, read_ic_mode);
-	}
+	if (stored) {
+		usleep_range(10000, 10000);
+
+		input_info(true, &ts->client->dev,"%s : before stored sec_function : 0x%02X\n", __func__, ts->sec_function);
+		ts->sec_function = nvt_ts_mode_read(ts);
+		input_info(true, &ts->client->dev,"%s : after  stored sec_function : 0x%02X\n", __func__, ts->sec_function);
+	} else
+		input_info(true, &ts->client->dev,"%s : mode from fw 0x%02X\n", __func__, nvt_ts_mode_read(ts));
 
 	return 0;
 }
@@ -2054,11 +2056,6 @@ static void glove_mode(void *device_data)
 		goto out;
 	}
 
-	if (sec->cmd_param[0])
-		ts->sec_function |= GLOVE_MASK;
-	else
-		ts->sec_function &= ~GLOVE_MASK;
-
 	ret = nvt_ts_mode_switch(ts, mode, true);
 	if (ret) {
 		mutex_unlock(&ts->lock);
@@ -2085,14 +2082,14 @@ out:
 }
 
 #ifdef PROXIMITY_FUNCTION
-int set_ear_detect(struct nvt_ts_data *ts, int mode)
+int set_ear_detect(struct nvt_ts_data *ts, int mode, bool stored)
 {
 	int ret;
 	u8 reg;
 	u8 buf[3];
 	u8 subcmd;
 
-	input_info(true, &ts->client->dev, "%s: set ear mode(%d)\n", __func__, mode);
+	input_info(true, &ts->client->dev, "%s: set ear mode(%d) stored(%d)\n", __func__, mode, stored);
 
 	reg = mode ? PROXIMITY_ENTER : PROXIMITY_LEAVE;
 
@@ -2107,7 +2104,7 @@ int set_ear_detect(struct nvt_ts_data *ts, int mode)
 	buf[0] = EVENT_MAP_HOST_CMD;
 	buf[1] = reg;
 	buf[2] = subcmd;
-	ret = nvt_ts_mode_switch_extened(ts, buf, 3, true);
+	ret = nvt_ts_mode_switch_extened(ts, buf, 3, stored);
 	if (ret) {
 		input_err(true, &ts->client->dev, "%s failed to switch ed\n", __func__);
 	}
@@ -2137,7 +2134,6 @@ static void ear_detect_enable(void *device_data)
 	}
 
 	if (ts->power_status != POWER_ON_STATUS) {
-		ts->ed_reset_flag = true;
 		input_err(true, &ts->client->dev, "%s: POWER_STATUS IS NOT ON(%d)!\n",
 					__func__, ts->power_status);
 		goto out;
@@ -2149,7 +2145,7 @@ static void ear_detect_enable(void *device_data)
 		goto out;
 	}
 
-	ret = set_ear_detect(ts, ts->ear_detect_mode);
+	ret = set_ear_detect(ts, ts->ear_detect_mode, true);
 	if (ret) {
 		mutex_unlock(&ts->lock);
 		goto out;
@@ -2186,11 +2182,6 @@ static void prox_lp_scan_mode(void *device_data)
 	int retry = 10;
 
 	sec_cmd_set_default_result(sec);
-
-	if (!ts->platdata->prox_lp_scan_enabled) {
-		input_err(true, &ts->client->dev, "%s: Not support LPSCAN!\n", __func__);
-		goto out;
-	}
 
 	if (ts->power_status != LP_MODE_STATUS) {
 		input_err(true, &ts->client->dev, "%s: Not LP_MODE_STATUS!\n", __func__);
@@ -2399,18 +2390,12 @@ static void aot_enable(void *device_data)
 		input_err(true, &ts->client->dev, "%s: invalid parameter %d\n",
 			__func__, sec->cmd_param[0]);
 		goto out;
+	} else {
+		mode = sec->cmd_param[0] ? DOUBLE_CLICK_ENTER : DOUBLE_CLICK_LEAVE;
+		ts->aot_enable = sec->cmd_param[0];
+		ts->lowpower_mode = ts->aot_enable;
+
 	}
-
-	if (sec->cmd_param[0])
-		ts->sec_function |= DOUBLE_CLICK_MASK;
-	else
-		ts->sec_function &= ~DOUBLE_CLICK_MASK;
-
-	mode = sec->cmd_param[0] ? DOUBLE_CLICK_ENTER : DOUBLE_CLICK_LEAVE;
-	ts->aot_enable = sec->cmd_param[0];
-	ts->lowpower_mode = ts->aot_enable;
-	input_info(true, &ts->client->dev, "%s: %s, %02X\n",
-			__func__, sec->cmd_param[0] ? "on" : "off", ts->lowpower_mode);
 
 	if (mutex_lock_interruptible(&ts->lock)) {
 		input_err(true, &ts->client->dev,"%s: another task is running\n",
@@ -2462,14 +2447,9 @@ static void dead_zone_enable(void *device_data)
 		input_err(true, &ts->client->dev, "%s: invalid parameter %d\n",
 			__func__, sec->cmd_param[0]);
 		goto out;
+	} else {
+		mode = sec->cmd_param[0] ? EDGE_AREA_ENTER : EDGE_AREA_LEAVE;
 	}
-
-	if (sec->cmd_param[0])
-		ts->sec_function |= EDGE_PIXEL_MASK;
-	else
-		ts->sec_function &= ~EDGE_PIXEL_MASK;
-
-	mode = sec->cmd_param[0] ? EDGE_AREA_ENTER : EDGE_AREA_LEAVE;
 
 	if (mutex_lock_interruptible(&ts->lock)) {
 		input_err(true, &ts->client->dev, "%s: another task is running\n",
@@ -5447,11 +5427,6 @@ static ssize_t sensitivity_mode_store(struct device *dev, struct device_attribut
 
 	mode = val ? SENSITIVITY_ENTER: SENSITIVITY_LEAVE;
 
-	if (val)
-		ts->sec_function |= SENSITIVITY_MASK;
-	else
-		ts->sec_function &= ~SENSITIVITY_MASK;
-
 	if (mutex_lock_interruptible(&ts->lock)) {
 		input_err(true, &ts->client->dev, "%s: another task is running\n",
 			__func__);
@@ -5541,7 +5516,7 @@ static ssize_t protos_event_store(struct device *dev,
 
 	ts->ear_detect_mode = data;
 
-	ret = set_ear_detect(ts, ts->ear_detect_mode);
+	ret = set_ear_detect(ts, ts->ear_detect_mode, false);
 	if (ret) {
 		input_err(true, &ts->client->dev, "%s: set_ear_detect fail!\n", __func__);
 	}
@@ -5579,64 +5554,11 @@ static ssize_t read_support_feature(struct device *dev,
 	if (ts->platdata->enable_settings_aot)
 		feature |= INPUT_FEATURE_ENABLE_SETTINGS_AOT;
 
-	if (ts->platdata->enable_sysinput_enabled)
-		feature |= INPUT_FEATURE_ENABLE_SYSINPUT_ENABLED;
-
-	if (ts->platdata->prox_lp_scan_enabled)
-		feature |= INPUT_FEATURE_ENABLE_PROX_LP_SCAN_ENABLED;
-
-	input_info(true, &ts->client->dev, "%s: %d%s%s%s\n",
+	input_info(true, &ts->client->dev, "%s: %d%s\n",
 				__func__, feature,
-				feature & INPUT_FEATURE_ENABLE_SETTINGS_AOT ? " aot" : "",
-				feature & INPUT_FEATURE_ENABLE_SYSINPUT_ENABLED ? " SE" : "",
-				feature & INPUT_FEATURE_ENABLE_PROX_LP_SCAN_ENABLED ? " LPSCAN" : "");
+				feature & INPUT_FEATURE_ENABLE_SETTINGS_AOT ? " aot" : "");
 
 	return snprintf(buf, SEC_CMD_BUF_SIZE, "%d", feature);
-}
-
-static ssize_t enabled_show(struct device *dev, struct device_attribute *attr,
-					char *buf)
-{
-	struct sec_cmd_data *sec = dev_get_drvdata(dev);
-	struct nvt_ts_data *ts = container_of(sec, struct nvt_ts_data, sec);
-
-	input_info(true, &ts->client->dev, "%s: power_status %d\n", __func__, ts->power_status);
-
-	return snprintf(buf, SEC_CMD_BUF_SIZE, "%d", ts->power_status);
-}
-
-static ssize_t enabled_store(struct device *dev, struct device_attribute *attr,
-					const char *buf, size_t count)
-{
-	struct sec_cmd_data *sec = dev_get_drvdata(dev);
-	struct nvt_ts_data *ts = container_of(sec, struct nvt_ts_data, sec);
-	int buff[2];
-	int ret;
-
-	ret = sscanf(buf, "%d,%d", &buff[0], &buff[1]);
-	if (ret != 2) {
-		input_err(true, &ts->client->dev,
-				"%s: failed read params [%d]\n", __func__, ret);
-		return -EINVAL;
-	}
-
-	input_info(true, &ts->client->dev, "%s: %d %d\n", __func__, buff[0], buff[1]);
-
-	/* handle same sequence : buff[0] = LCD_ON, LCD_DOZE1, LCD_DOZE2*/
-	if (buff[0] == LCD_DOZE1 || buff[0] == LCD_DOZE2)
-		buff[0] = LCD_ON;
-
-	if (buff[0] == LCD_ON) {
-		if (buff[1] == LCD_EARLY_EVENT)
-			nvt_ts_early_resume(&ts->client->dev);
-		else if (buff[1] == LCD_LATE_EVENT)
-			nvt_ts_resume(&ts->client->dev);
-	} else if (buff[0] == LCD_OFF) {
-		if (buff[1] == LCD_EARLY_EVENT)
-			nvt_ts_suspend(&ts->client->dev);
-	}
-
-	return count;
 }
 
 #if SHOW_NOT_SUPPORT_CMD
@@ -5656,7 +5578,6 @@ static DEVICE_ATTR(support_feature, 0444, read_support_feature, NULL);
 #if !defined(CONFIG_SAMSUNG_PRODUCT_SHIP)
 static DEVICE_ATTR(noise_mode, 0664, noise_mode_show, NULL);
 #endif
-static DEVICE_ATTR(enabled, 0664, enabled_show, enabled_store);
 
 static struct attribute *cmd_attributes[] = {
 #if SHOW_NOT_SUPPORT_CMD
@@ -5676,7 +5597,6 @@ static struct attribute *cmd_attributes[] = {
 #if !defined(CONFIG_SAMSUNG_PRODUCT_SHIP)
 	&dev_attr_noise_mode.attr,
 #endif
-	&dev_attr_enabled.attr,
 	NULL,
 };
 

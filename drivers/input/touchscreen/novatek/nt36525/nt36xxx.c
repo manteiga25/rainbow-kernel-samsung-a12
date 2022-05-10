@@ -636,9 +636,6 @@ int32_t nvt_check_fw_reset_state(RST_COMPLETE_STATE check_reset_state)
 		usleep_range(10000, 10000);
 	}
 
-	if (!ret)
-		input_info(true, &ts->client->dev, "%s : retry=%d, buf[1] = %x\n", __func__, retry, buf[1]);
-
 	return ret;
 }
 
@@ -1341,14 +1338,6 @@ static int nvt_parse_dt(struct device *dev)
 	input_info(true, dev, "%s: AOT mode %s\n",
 				__func__, platdata->enable_settings_aot ? "ON" : "OFF");
 
-	platdata->enable_sysinput_enabled = of_property_read_bool(np, "novatek,enable_sysinput_enabled");
-	input_info(true, dev, "%s: Sysinput enabled %s\n",
-				__func__, platdata->enable_sysinput_enabled ? "ON" : "OFF");
-
-	platdata->prox_lp_scan_enabled = of_property_read_bool(np, "novatek,prox_lp_scan_enabled");
-	input_info(true, dev, "%s: Prox LP Scan enabled %s\n",
-				__func__, platdata->prox_lp_scan_enabled ? "ON" : "OFF");
-
 	input_info(true, dev, "%s: end!\n", __func__);
 
 	return 0;
@@ -1490,10 +1479,6 @@ static void nvt_esd_check_func(struct work_struct *work)
 					__func__, timer, esd_retry);
 		/* do esd recovery, reload fw */
 		nvt_update_firmware(ts->platdata->firmware_name);
-		if (nvt_check_fw_reset_state(RESET_STATE_REK))
-			input_err(true, &ts->client->dev, "%s: Check FW state failed after ESD recovery\n", __func__);
-		else
-			nvt_ts_mode_restore(ts);
 		mutex_unlock(&ts->lock);
 		/* update interrupt timer */
 		irq_timer = jiffies;
@@ -1798,11 +1783,6 @@ static irqreturn_t nvt_ts_work_func(int irq, void *data)
    if (nvt_wdt_fw_recovery(point_data)) {
        input_err(true, &ts->client->dev,"Recover for fw reset, %02X\n", point_data[1]);
        nvt_update_firmware(ts->platdata->firmware_name);
-	   if (nvt_check_fw_reset_state(RESET_STATE_REK))
-		   input_err(true, &ts->client->dev, "%s: Check FW state failed after FW reset recovery\n", __func__);
-	   else
-		   nvt_ts_mode_restore(ts);
-
        goto XFER_ERROR;
    }
 #endif /* #if NVT_TOUCH_WDT_RECOVERY */
@@ -2394,23 +2374,21 @@ static int32_t nvt_ts_probe(struct spi_device *client)
 	}
 
 #if defined(CONFIG_FB)
-	if (!ts->platdata->enable_sysinput_enabled) {
 #ifdef _MSM_DRM_NOTIFY_H_
-		ts->drm_notif.notifier_call = nvt_drm_notifier_callback;
-		ret = msm_drm_register_client(&ts->drm_notif);
-		if (ret) {
-			input_err(true, &client->dev, "register drm_notifier failed. ret=%d\n", ret);
-			goto err_register_notif_failed;
-		}
-#else
-		ts->fb_notif.notifier_call = nvt_fb_notifier_callback;
-		ret = fb_register_client(&ts->fb_notif);
-		if (ret) {
-			input_err(true, &client->dev, "register fb_notifier failed. ret=%d\n", ret);
-			goto err_register_notif_failed;
-		}
-#endif
+	ts->drm_notif.notifier_call = nvt_drm_notifier_callback;
+	ret = msm_drm_register_client(&ts->drm_notif);
+	if(ret) {
+		input_err(true, &client->dev,"register drm_notifier failed. ret=%d\n", ret);
+		goto err_register_drm_notif_failed;
 	}
+#else
+	ts->fb_notif.notifier_call = nvt_fb_notifier_callback;
+	ret = fb_register_client(&ts->fb_notif);
+	if(ret) {
+		input_err(true, &client->dev,"register fb_notifier failed. ret=%d\n", ret);
+		goto err_register_fb_notif_failed;
+	}
+#endif
 #elif defined(CONFIG_HAS_EARLYSUSPEND)
 	ts->early_suspend.level = EARLY_SUSPEND_LEVEL_BLANK_SCREEN + 1;
 	ts->early_suspend.suspend = nvt_ts_early_suspend;
@@ -2427,35 +2405,20 @@ static int32_t nvt_ts_probe(struct spi_device *client)
 	nvt_irq_enable(true);
 	input_err(true, &client->dev, "%s : end\n", __func__);
 
-#ifdef CONFIG_BATTERY_SAMSUNG
-	if (lpcharge) {
-		input_info(true, &client->dev, "%s: enter sleep mode in lpcharge %d\n", __func__, lpcharge);
-		nvt_ts_suspend(&ts->client->dev);
-#if BOOT_UPDATE_FIRMWARE
-		if (nvt_fwu_wq) {
-			cancel_delayed_work_sync(&ts->nvt_fwu_work);
-			destroy_workqueue(nvt_fwu_wq);
-			nvt_fwu_wq = NULL;
-		}
-#endif
-	}
-#endif
-
 	return 0;
 
 #if defined(CONFIG_HAS_EARLYSUSPEND)
 err_register_early_suspend_failed:
 #elif defined(CONFIG_FB)
-	if (!ts->platdata->enable_sysinput_enabled) {
 #ifdef _MSM_DRM_NOTIFY_H_
-		if (msm_drm_unregister_client(&ts->drm_notif))
-			input_err(true, &client->dev, "Error occurred while unregistering drm_notifier.\n");
+	if (msm_drm_unregister_client(&ts->drm_notif))
+		input_err(true, &client->dev,"Error occurred while unregistering drm_notifier.\n");
+err_register_drm_notif_failed:
 #else
-		if (fb_unregister_client(&ts->fb_notif))
-			input_err(true, &client->dev, "Error occurred while unregistering fb_notifier.\n");
+	if (fb_unregister_client(&ts->fb_notif))
+		input_err(true, &client->dev,"Error occurred while unregistering fb_notifier.\n");
+err_register_fb_notif_failed:
 #endif
-	}
-err_register_notif_failed:
 #endif
 err_init_sec_fn:
 	nvt_ts_sec_fn_remove(ts);
@@ -2560,7 +2523,6 @@ static int32_t nvt_ts_remove(struct spi_device *client)
 	cancel_delayed_work_sync(&ts->work_print_info);
 
 #if defined(CONFIG_FB)
-	if (!ts->platdata->enable_sysinput_enabled) {
 #ifdef _MSM_DRM_NOTIFY_H_
 	if (msm_drm_unregister_client(&ts->drm_notif))
 		input_err(true, &client->dev,"Error occurred while unregistering drm_notifier.\n");
@@ -2568,7 +2530,6 @@ static int32_t nvt_ts_remove(struct spi_device *client)
 	if (fb_unregister_client(&ts->fb_notif))
 		input_err(true, &client->dev,"Error occurred while unregistering fb_notifier.\n");
 #endif
-	}
 #elif defined(CONFIG_HAS_EARLYSUSPEND)
 	unregister_early_suspend(&ts->early_suspend);
 #endif
@@ -2661,7 +2622,6 @@ static void nvt_ts_shutdown(struct spi_device *client)
 	pinctrl_configure(ts, false);
 
 #if defined(CONFIG_FB)
-	if (!ts->platdata->enable_sysinput_enabled) {
 #ifdef _MSM_DRM_NOTIFY_H_
 	if (msm_drm_unregister_client(&ts->drm_notif))
 		input_err(true, &client->dev,"Error occurred while unregistering drm_notifier.\n");
@@ -2669,7 +2629,6 @@ static void nvt_ts_shutdown(struct spi_device *client)
 	if (fb_unregister_client(&ts->fb_notif))
 		input_err(true, &client->dev,"Error occurred while unregistering fb_notifier.\n");
 #endif
-	}
 #elif defined(CONFIG_HAS_EARLYSUSPEND)
 	unregister_early_suspend(&ts->early_suspend);
 #endif
@@ -2773,7 +2732,7 @@ Description:
 return:
 	Executive outcomes. 0---succeed.
 *******************************************************/
-int32_t nvt_ts_suspend(struct device *dev)
+static int32_t nvt_ts_suspend(struct device *dev)
 {
 	struct nvt_ts_data *ts = dev_get_drvdata(dev);
 	uint8_t buf[4] = {0};
@@ -2880,11 +2839,10 @@ int32_t nvt_ts_suspend(struct device *dev)
 
 	return 0;
 }
-
-void nvt_ts_early_resume(struct device *dev)
+static void nvt_ts_early_resume(struct device *dev)
 {
 	struct nvt_ts_data *ts = dev_get_drvdata(dev);
-
+	
 	input_info(true, &ts->client->dev, "%s : start(%d)\n", __func__, ts->power_status);
 
 	if (++ts->early_resume_cnt > 0xfff0)
@@ -2910,7 +2868,7 @@ Description:
 return:
 	Executive outcomes. 0---succeed.
 *******************************************************/
-int32_t nvt_ts_resume(struct device *dev)
+static int32_t nvt_ts_resume(struct device *dev)
 {
 	struct nvt_ts_data *ts = dev_get_drvdata(dev);
 
@@ -2949,19 +2907,8 @@ int32_t nvt_ts_resume(struct device *dev)
 
 	nvt_ts_mode_restore(ts);
 
-	if (ts->ear_detect_mode  == 0 && ts->ed_reset_flag) {
-		input_info(true, &ts->client->dev, "%s : set ed on & off\n", __func__);
-		if (set_ear_detect(ts, 1)) {
-			input_err(true, &ts->client->dev, "%s : Fail to set set_ear_detect on\n", __func__);
-		}
-		if (set_ear_detect(ts, 0)) {
-			input_err(true, &ts->client->dev, "%s : Fail to set set_ear_detect off\n", __func__);
-		}
-	}
-	ts->ed_reset_flag = false;
-
 	if (ts->ear_detect_mode) {
-		if (set_ear_detect(ts, ts->ear_detect_mode)) {
+		if (set_ear_detect(ts, ts->ear_detect_mode, true)) {
 			input_err(true, &ts->client->dev, "%s : Fail to set set_ear_detect\n", __func__);
 		}
 	}

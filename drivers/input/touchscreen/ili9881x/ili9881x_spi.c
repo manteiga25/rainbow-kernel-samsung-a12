@@ -598,7 +598,6 @@ static int ilitek_spi_probe(struct spi_device *spi)
 	ilits->dead_zone_enabled = true; //default true at fw
 	ilits->sip_mode_enabled = false;
 	ilits->prox_lp_scan_mode_enabled = false;
-	ilits->sleep_handler_mode = TP_RESUME;
 
 #if ENABLE_GESTURE
 	ilits->gesture = DISABLE;

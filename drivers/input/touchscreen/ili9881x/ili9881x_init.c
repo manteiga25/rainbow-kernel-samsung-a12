@@ -28,11 +28,11 @@ void ili_tp_reset(void)
 
 	/* Need accurate power sequence, do not change it to msleep */
 	gpio_direction_output(ilits->tp_rst, 1);
-	usleep_range(1 * 1000, 1 * 1000);
+	mdelay(1);
 	gpio_set_value(ilits->tp_rst, 0);
-	usleep_range(5 * 1000, 5 * 1000);
+	mdelay(5);
 	gpio_set_value(ilits->tp_rst, 1);
-	msleep(ilits->rst_edge_delay);
+	mdelay(ilits->rst_edge_delay);
 }
 
 static void touch_set_input_prop_proximity(struct input_dev *dev)
@@ -165,7 +165,7 @@ void ili_plat_regulator_power_on(bool status)
 		}
 	}
 	atomic_set(&ilits->ice_stat, DISABLE);
-	usleep_range(5 * 1000, 5 * 1000);
+	mdelay(5);
 }
 
 static void ilitek_plat_regulator_power_init(void)
@@ -254,7 +254,7 @@ out:
 	gpio_direction_output(ilits->tp_rst, 1);
 
 	gpio_set_value(ilits->tp_rst, 1);
-	msleep(ilits->rst_edge_delay);
+	mdelay(ilits->rst_edge_delay);
 
 	val = gpio_get_value(ilits->tp_rst);
 	val2 = gpio_get_value(ilits->tp_int);
@@ -316,7 +316,7 @@ out:
 void ili_irq_wake_disable(void)
 {
 	if (atomic_read(&ilits->irq_wake_stat) == DISABLE) {
-		input_info(true, ilits->dev, "%s already disabled\n", __func__);
+		input_info(true, ilits->dev, "%s already diabled\n", __func__);
 		return;
 	}
 
@@ -493,8 +493,96 @@ int ili_sysfs_remove_device(struct device *dev)
 
 	return 0;
 }
+#else
+
+#if defined(CONFIG_FB) || defined(CONFIG_DRM_MSM)
+static int ilitek_plat_notifier_fb(struct notifier_block *self, unsigned long event, void *data)
+{
+	int *blank;
+	struct fb_event *evdata = data;
+
+	/*
+	 *	FB_EVENT_BLANK(0x09): A hardware display blank change occurred.
+	 *	FB_EARLY_EVENT_BLANK(0x10): A hardware display blank early change occurred.
+	 */
+	if (evdata && evdata->data) {
+		blank = evdata->data;
+		input_info(true, ilits->dev, "%s blank:%d, event:0x%x (node %d)\n",
+				__func__, *blank, event, evdata->info->node);
+		switch (*blank) {
+		case FB_BLANK_POWERDOWN:
+			if (TP_SUSPEND_PRIO) {
+				if (event == FB_EARLY_EVENT_BLANK) {
+					if (ili_sleep_handler(TP_EARLY_SUSPEND) < 0)
+						input_err(true, ilits->dev, "%s TP suspend failed\n", __func__);
+				} else {
+					return NOTIFY_DONE;
+				}
+			} else {
+				if (event != FB_EVENT_BLANK)
+					return NOTIFY_DONE;
+			}
+			break;
+		case FB_BLANK_UNBLANK:
+		case FB_BLANK_NORMAL:
+			if (event == FB_EARLY_EVENT_BLANK) {
+				if((ilits->screen_off_sate != TP_EARLY_RESUME) && (ilits->screen_off_sate != TP_RESUME))
+					ili_sleep_handler(TP_EARLY_RESUME);
+				return NOTIFY_DONE;
+			} else if (event == FB_EVENT_BLANK) {
+				if (ili_sleep_handler(TP_RESUME) < 0)
+					input_err(true, ilits->dev, "%s TP resume failed\n", __func__);
+			}
+			break;
+		default:
+			input_err(true, ilits->dev, "%s Unknown event, blank = %d\n", __func__, *blank);
+			break;
+		}
+	}
+	return NOTIFY_OK;
+}
+#else
+static void ilitek_plat_early_suspend(struct early_suspend *h)
+{
+	if (ili_sleep_handler(TP_EARLY_SUSPEND) < 0)
+		input_err(true, ilits->dev, "%s TP suspend failed\n", __func__);
+}
+
+static void ilitek_plat_late_resume(struct early_suspend *h)
+{
+	if (ili_sleep_handler(TP_RESUME) < 0)
+		input_err(true, ilits->dev, "%s TP resume failed\n", __func__);
+}
 #endif
 
+static void ilitek_plat_sleep_init(void)
+{
+#if defined(CONFIG_FB) || defined(CONFIG_DRM_MSM)
+	input_info(true, ilits->dev, "%s Init notifier_fb struct\n", __func__);
+	ilits->notifier_fb.notifier_call = ilitek_plat_notifier_fb;
+#if defined(CONFIG_DRM_MSM)
+		if (msm_drm_register_client(&ilits->notifier_fb)) {
+			input_err(true, ilits->dev, "%s msm_drm_register_client Unable to register fb_notifier\n",
+				 __func__);
+		}
+#else
+#if CONFIG_PLAT_SPRD
+	if (adf_register_client(&ilits->notifier_fb))
+		input_err(true, ilits->dev, "%s Unable to register notifier_fb\n", __func__);
+#else
+	if (fb_register_client(&ilits->notifier_fb))
+		input_err(true, ilits->dev, "%s Unable to register notifier_fb\n", __func__);
+#endif /* CONFIG_PLAT_SPRD */
+#endif /* CONFIG_DRM_MSM */
+#else
+	input_info(true, ilits->dev, "%s Init eqarly_suspend struct\n", __func__);
+	ilits->early_suspend.suspend = ilitek_plat_early_suspend;
+	ilits->early_suspend.resume = ilitek_plat_late_resume;
+	ilits->early_suspend.level = EARLY_SUSPEND_LEVEL_BLANK_SCREEN + 1;
+	register_early_suspend(&ilits->early_suspend);
+#endif
+}
+#endif
 #if CHARGER_NOTIFIER_CALLBACK
 #if KERNEL_VERSION(4, 1, 0) <= LINUX_VERSION_CODE
 /* add_for_charger_start */
@@ -740,16 +828,12 @@ static int parse_dt(void)
 		__func__, ilits->area_indicator, ilits->area_navigation, ilits->area_edge);
 
 	ilits->enable_settings_aot = of_property_read_bool(np, "iliteck,enable_settings_aot");
-	ilits->enable_sysinput_enabled = of_property_read_bool(np, "iliteck,enable_sysinput_enabled");
 	ilits->support_ear_detect = of_property_read_bool(np, "iliteck,support_ear_detect_mode");
-	ilits->prox_lp_scan_enabled = of_property_read_bool(np, "iliteck,prox_lp_scan_enabled");
 	ilits->support_spay_gesture_mode = of_property_read_bool(np, "iliteck,support_spay_gesture_mode");
-	input_info(true, ilits->dev, "%s : supprot: %s%s%s%s%s\n",
+	input_info(true, ilits->dev, "%s : supprot: %s%s%s\n",
 				__func__, ilits->enable_settings_aot ? " AOT" : "",
-				ilits->enable_sysinput_enabled ? " SE" : "",
 				ilits->support_ear_detect ? " ED" : "",
-				ilits->support_spay_gesture_mode ? "SPAY" : "",
-				ilits->prox_lp_scan_enabled ? "LPSCAN" : "");
+				ilits->support_spay_gesture_mode ? "SPAY" : "");
 
 	ilits->pinctrl = pinctrl_get_select_default(ilits->dev);
 	if (!IS_ERR(ilits->pinctrl)) {
@@ -761,7 +845,7 @@ static int parse_dt(void)
 
 		ilits->pins_off_state = pinctrl_lookup_state(ilits->pinctrl, "pins_off_state");
 		if (IS_ERR(ilits->pins_off_state)) {
-			input_err(true, ilits->dev, "could not get pins pins_off_state (%li)\n",
+			input_err(true, ilits->dev, "could not get pins pins_on_state (%li)\n",
 				PTR_ERR(ilits->pins_off_state));
 		}
 	} else {
@@ -784,14 +868,6 @@ static int ilitek_plat_probe(void)
 		return -EINVAL;
 	}
 
-#ifdef CONFIG_BATTERY_SAMSUNG
-	if (lpcharge) {
-		input_info(true, ilits->dev, "%s: enter sleep mode in lpcharge %d\n", __func__, lpcharge);
-		ilitek_pin_control(false);
-		return -ENODEV;
-	}
-#endif
-
 #if REGULATOR_POWER
 	ilitek_plat_regulator_power_init();
 #endif
@@ -810,6 +886,8 @@ static int ilitek_plat_probe(void)
 	ili_sysfs_add_device(ilits->dev);
 	if (sysfs_create_link(NULL, &ilits->dev->kobj, "touchscreen") < 0)
 		input_info(true, ilits->dev, "%s Failed to create link!\n", __func__);
+#else
+	ilitek_plat_sleep_init();
 #endif
 	ilits->pm_suspend = false;
 	init_completion(&ilits->pm_completion);
