@@ -29,8 +29,8 @@
 #  define LCM_LOGI(string, args...)  dprintf(0, "[LK/"LOG_TAG"]"string, ##args)
 #  define LCM_LOGD(string, args...)  dprintf(1, "[LK/"LOG_TAG"]"string, ##args)
 #else
-#  define LCM_LOGI(fmt, args...)  pr_debug("[KERNEL/"LOG_TAG"]"fmt, ##args)
-#  define LCM_LOGD(fmt, args...)  pr_debug("[KERNEL/"LOG_TAG"]"fmt, ##args)
+#  define LCM_LOGI(fmt, args...)  pr_err("[KERNEL/"LOG_TAG"]"fmt, ##args)
+#  define LCM_LOGD(fmt, args...)  pr_err("[KERNEL/"LOG_TAG"]"fmt, ##args)
 #endif
 static struct LCM_UTIL_FUNCS lcm_util;
 #define SET_RESET_PIN(v)	(lcm_util.set_reset_pin((v)))
@@ -96,6 +96,14 @@ static struct LCM_setting_table lcm_suspend_setting[] = {
 	{0x10, 0, {} },
 	{REGFLAG_DELAY, 150, {} },
 };
+#ifdef CUSTOMER_REFERENCE
+static struct LCM_setting_table lcm_disable_setting[] = {
+	{0x28, 0, {} },
+	{REGFLAG_DELAY, 50, {} },
+	{0x10, 0, {} },
+	{REGFLAG_DELAY, 150, {} },
+};
+#endif
 static struct LCM_setting_table init_setting_vdo[] = {
 	{0xFF, 0x03, {0x98, 0x82, 0x00}},
 	{0x51, 0x02, {0x0F, 0xFF}},
@@ -203,6 +211,7 @@ static int _lcm_i2c_probe(struct i2c_client *client,
 	}
 
 	pr_info("ili9882n : %s : board revision and LCM doesn't match.\n", __func__);
+
 	return -EPERM;
 }
 static int _lcm_i2c_remove(struct i2c_client *client)
@@ -395,6 +404,18 @@ static void lcm_resume(void)
 	pr_info("ili9882n : %s\n", __func__);
 	lcm_init();
 }
+static void lcm_disable(void)
+{
+	/*
+	 * This is for reference only.
+	 * Customer is expected to modify in their LCM driver directly.
+	 */
+#ifdef CUSTOMER_REFERENCE
+	pr_info("td4320 : %s\n", __func__);
+	push_table(NULL, lcm_disable_setting,
+		   ARRAY_SIZE(lcm_disable_setting), 1);
+#endif
+}
 static void lcm_setbacklight_cmdq(void *handle, unsigned int level)
 {
 	LCM_LOGI("%s,ili9882n backlight: level = %d\n", __func__, level);
@@ -469,5 +490,6 @@ struct LCM_DRIVER ili9882n_hdp_dsi_vdo_ilitek_lm36274_lcm_drv = {
 	.suspend_power = lcm_suspend_power,
 	.set_backlight_cmdq = lcm_setbacklight_cmdq,
 	.update = lcm_update,
+	.disable = lcm_disable,
 };
 

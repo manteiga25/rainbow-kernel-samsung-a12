@@ -1,8 +1,8 @@
 /*
  * Copyright (C) 2010 - 2017 Novatek, Inc.
  *
- * $Revision: 19587 $
- * $Date: 2017-11-28 21:00:30 +0800 (周二, 28 十一月 2017) $
+ * $Revision: 20544 $
+ * $Date: 2017-12-20 11:08:15 +0800 (周三, 20 十二月 2017) $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -15,6 +15,7 @@
  * more details.
  *
  */
+
 struct nvt_ts_mem_map {
 	uint32_t EVENT_BUF_ADDR;
 	uint32_t RAW_PIPE0_ADDR;

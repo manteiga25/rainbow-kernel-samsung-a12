@@ -1,8 +1,8 @@
 /*
  * Copyright (C) 2010 - 2017 Novatek, Inc.
  *
- * $Revision: 23179 $
- * $Date: 2018-02-12 16:37:16 +0800 (周一, 12 二月 2018) $
+ * $Revision: 24784 $
+ * $Date: 2018-03-19 19:24:29 +0800 (周一, 19 三月 2018) $
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -1360,8 +1360,7 @@ static int32_t nvt_selftest_open(struct inode *inode, struct file *file)
 		 * Ex. nvt_pid = 500A
 		 *     mpcriteria = "novatek-mp-criteria-500A"
 		 */
-		snprintf(mpcriteria, 32,
-			"novatek-mp-criteria-%04X", ts->nvt_pid);
+		snprintf(mpcriteria, PAGE_SIZE, "novatek-mp-criteria-%04X", ts->nvt_pid);
 
 		if (nvt_mp_parse_dt(np, mpcriteria)) {
 			mutex_unlock(&ts->lock);
