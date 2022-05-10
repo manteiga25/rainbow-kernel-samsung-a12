@@ -92,6 +92,9 @@ config MTK_PMQOS
 	  from the devices request to adjust qos policy for power
 	  and performance.
 
+config STATE_NOTIFIER
+    bool "State Notifier"
+
 menu "Security"
 
 source "drivers/soc/mediatek/devapc/Kconfig"
