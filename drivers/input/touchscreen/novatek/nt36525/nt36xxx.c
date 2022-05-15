@@ -2746,7 +2746,7 @@ Description:
 return:
 	Executive outcomes. 0---succeed.
 *******************************************************/
-static int32_t nvt_ts_suspend(struct device *dev)
+int32_t nvt_ts_suspend(struct device *dev)
 {
 	struct nvt_ts_data *ts = dev_get_drvdata(dev);
 	uint8_t buf[4] = {0};
