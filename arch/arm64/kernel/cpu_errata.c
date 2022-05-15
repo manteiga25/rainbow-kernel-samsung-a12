@@ -713,6 +713,12 @@ const struct arm64_cpu_capabilities arm64_errata[] = {
 		ERRATA_MIDR_REV_RANGE(MIDR_CORTEX_A53, 0, 0, 4),
 		MIDR_FIXED(0x4, BIT(8)),
 	},
+	{
+       /* Cortex-A53 all versions */
+                .desc = "ARM erratum 835769",
+                .capability = ARM64_WORKAROUND_835769,
+                MIDR_RANGE(MIDR_CORTEX_A53, 0x00, 0x04),
+       },
 #endif
 #ifdef CONFIG_ARM64_ERRATUM_845719
 	{

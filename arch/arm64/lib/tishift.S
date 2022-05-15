@@ -1,11 +1,22 @@
-/* SPDX-License-Identifier: (GPL-2.0 OR BSD-3-Clause)
+/*
+ * Copyright (C) 2017 Jason A. Donenfeld <Jason@zx2c4.com>. All Rights Reserved.
  *
- * Copyright (C) 2017-2018 Jason A. Donenfeld <Jason@zx2c4.com>. All Rights Reserved.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 as
+ * published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #include <linux/linkage.h>
 
-ENTRY(__ashlti3)
+SYM_FUNC_START(__ashlti3)
 	cbz	x2, 1f
 	mov	x3, #64
 	sub	x3, x3, x2
@@ -24,9 +35,9 @@ ENTRY(__ashlti3)
 	lsl	x1, x0, x1
 	mov	x0, x2
 	ret
-ENDPROC(__ashlti3)
+SYM_FUNC_END(__ashlti3)
 
-ENTRY(__ashrti3)
+SYM_FUNC_START(__ashrti3)
 	cbz	x2, 1f
 	mov	x3, #64
 	sub	x3, x3, x2
@@ -45,9 +56,9 @@ ENTRY(__ashrti3)
 	asr	x0, x1, x0
 	mov	x1, x2
 	ret
-ENDPROC(__ashrti3)
+SYM_FUNC_END(__ashrti3)
 
-ENTRY(__lshrti3)
+SYM_FUNC_START(__lshrti3)
 	cbz	x2, 1f
 	mov	x3, #64
 	sub	x3, x3, x2
@@ -66,4 +77,4 @@ ENTRY(__lshrti3)
 	lsr	x0, x1, x0
 	mov	x1, x2
 	ret
-ENDPROC(__lshrti3)
+SYM_FUNC_END(__lshrti3)
