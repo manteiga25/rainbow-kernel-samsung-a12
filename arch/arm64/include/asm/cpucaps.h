@@ -55,7 +55,9 @@
 #define ARM64_SSBS				34
 #define ARM64_WORKAROUND_1542419		35
 #define ARM64_HAS_CRC32				36
+#ifdef CONFIG_ARM64_ERRATUM_835769
 #define ARM64_WORKAROUND_835769                 37
+#endif
 
 /* kabi: reserve 38 - 64 for future cpu capabilities */
 #define ARM64_NCAPS				64
