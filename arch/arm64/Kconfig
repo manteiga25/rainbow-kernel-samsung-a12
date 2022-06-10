@@ -501,6 +501,12 @@ config ARM64_ERRATUM_843419
 
 	  If unsure, say Y.
 
+config ARM64_ERRATUM_835769
+        bool "Cortex-a53: 835769: Fix store"
+        default n
+        help
+          Exprimental.
+
 config ARM64_ERRATUM_1024718
 	bool "Cortex-A55: 1024718: Update of DBM/AP bits without break before make might result in incorrect update"
 	default y
