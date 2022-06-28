@@ -27,7 +27,7 @@
 
 #define MIN_VOLT_SHIFT		(100000)
 #define MAX_VOLT_SHIFT		(200000)
-#define MAX_VOLT_LIMIT		(1150000)
+#define MAX_VOLT_LIMIT		(1180000)
 #define VOLT_TOL		(10000)
 
 /*
